@@ -44,6 +44,26 @@ func TestMapFilterDeferred(t *testing.T) {
 	}
 }
 
+func TestIndexedOperations(t *testing.T) {
+	mapped := gchain.From([]string{"a", "b", "c"}).
+		MapIndexed(func(index int, value string) string {
+			return strings.Repeat(value, index+1)
+		}).
+		ToSlice()
+	if !reflect.DeepEqual(mapped, []string{"a", "bb", "ccc"}) {
+		t.Fatalf("MapIndexed().ToSlice()=%v, want [a bb ccc]", mapped)
+	}
+
+	filtered := gchain.From([]string{"a", "b", "c", "d"}).
+		FilterIndexed(func(index int, value string) bool {
+			return index%2 == 0 || value == "d"
+		}).
+		ToSlice()
+	if !reflect.DeepEqual(filtered, []string{"a", "c", "d"}) {
+		t.Fatalf("FilterIndexed().ToSlice()=%v, want [a c d]", filtered)
+	}
+}
+
 func TestEarlyStopOperations(t *testing.T) {
 	t.Run("First", func(t *testing.T) {
 		pulled := 0
@@ -405,7 +425,9 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { _ = gchain.From([]int{}).FlatMap[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).DistinctBy[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Map[int](nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).MapIndexed[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Filter(nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).FilterIndexed(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Take(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Drop(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).GroupBy[int](nil) })
@@ -419,6 +441,8 @@ func TestNilFunctionsPanic(t *testing.T) {
 
 	pairs := gchain.FromMap(map[string]int{})
 	mustPanic(t, func() { _ = pairs.Filter(nil) })
+	mustPanic(t, func() { _ = pairs.FilterKeys(nil) })
+	mustPanic(t, func() { _ = pairs.FilterValues(nil) })
 	mustPanic(t, func() { _ = pairs.Map[int](nil) })
 	mustPanic(t, func() { _ = pairs.MapKeys[string](nil) })
 	mustPanic(t, func() { _ = pairs.MapValues[int](nil) })
@@ -449,6 +473,24 @@ func TestPairsOperations(t *testing.T) {
 
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("pairs ToMap()=%v, want %v", got, want)
+	}
+
+	byKey := gchain.FromMap(map[string]int{"apple": 1, "banana": 2, "apricot": 3}).
+		FilterKeys(func(key string) bool {
+			return strings.HasPrefix(key, "ap")
+		}).
+		ToMap()
+	if !reflect.DeepEqual(byKey, map[string]int{"apple": 1, "apricot": 3}) {
+		t.Fatalf("FilterKeys().ToMap()=%v, want apple/apricot", byKey)
+	}
+
+	byValue := gchain.FromMap(map[string]int{"a": 1, "b": 2, "c": 3}).
+		FilterValues(func(value int) bool {
+			return value > 1
+		}).
+		ToMap()
+	if !reflect.DeepEqual(byValue, map[string]int{"b": 2, "c": 3}) {
+		t.Fatalf("FilterValues().ToMap()=%v, want b/c", byValue)
 	}
 
 	keys := gchain.FromMap(map[string]int{"b": 2, "a": 1}).Keys().ToSlice()

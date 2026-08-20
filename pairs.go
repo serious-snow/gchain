@@ -57,6 +57,42 @@ func (p Pairs[K, V]) Filter(f func(K, V) bool) Pairs[K, V] {
 	}
 }
 
+// FilterKeys deferred 地按 key 保留 key-value pair。
+func (p Pairs[K, V]) FilterKeys(f func(K) bool) Pairs[K, V] {
+	if f == nil {
+		panic("gchain: nil FilterKeys function")
+	}
+
+	return Pairs[K, V]{
+		seq: func(yield func(K, V) bool) {
+			p.Seq2()(func(key K, value V) bool {
+				if !f(key) {
+					return true
+				}
+				return yield(key, value)
+			})
+		},
+	}
+}
+
+// FilterValues deferred 地按 value 保留 key-value pair。
+func (p Pairs[K, V]) FilterValues(f func(V) bool) Pairs[K, V] {
+	if f == nil {
+		panic("gchain: nil FilterValues function")
+	}
+
+	return Pairs[K, V]{
+		seq: func(yield func(K, V) bool) {
+			p.Seq2()(func(key K, value V) bool {
+				if !f(value) {
+					return true
+				}
+				return yield(key, value)
+			})
+		},
+	}
+}
+
 // Map deferred 地把每个 key-value pair 映射为单值。
 func (p Pairs[K, V]) Map[U any](f func(K, V) U) Chain[U] {
 	if f == nil {

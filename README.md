@@ -72,7 +72,9 @@ ports := gchain.FromMap(config).
 | Method | Returns | Description | Execution |
 | --- | --- | --- | --- |
 | `Map(func(T) U)` | `Chain[U]` | 映射元素类型。 | deferred, streaming |
+| `MapIndexed(func(int,T) U)` | `Chain[U]` | 按 index 和 value 映射元素类型。 | deferred, streaming |
 | `Filter(func(T) bool)` | `Chain[T]` | 保留匹配元素。 | deferred, streaming |
+| `FilterIndexed(func(int,T) bool)` | `Chain[T]` | 按 index 和 value 保留匹配元素。 | deferred, streaming |
 | `Take(n)` | `Chain[T]` | 最多保留前 `n` 个元素，支持早停。 | deferred, streaming |
 | `Drop(n)` | `Chain[T]` | 跳过前 `n` 个元素。 | deferred, streaming |
 | `FlatMap(func(T) []U)` | `Chain[U]` | 把一个元素展开为多个元素。 | deferred, streaming |
@@ -111,6 +113,8 @@ ports := gchain.FromMap(config).
 | Method | Returns | Description | Execution |
 | --- | --- | --- | --- |
 | `Filter(func(K,V) bool)` | `Pairs[K,V]` | 保留匹配的 key-value pair。 | deferred, streaming |
+| `FilterKeys(func(K) bool)` | `Pairs[K,V]` | 按 key 保留匹配的 pair。 | deferred, streaming |
+| `FilterValues(func(V) bool)` | `Pairs[K,V]` | 按 value 保留匹配的 pair。 | deferred, streaming |
 | `Map(func(K,V) U)` | `Chain[U]` | 把 pair 映射为单值。 | deferred, streaming |
 | `MapKeys(func(K) K2)` | `Pairs[K2,V]` | 映射 key，并保留 value。 | deferred, streaming |
 | `MapValues(func(V) U)` | `Pairs[K,U]` | 映射 value，并保留 key。 | deferred, streaming |

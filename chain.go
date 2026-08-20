@@ -53,6 +53,24 @@ func (c Chain[T]) Map[U any](f func(T) U) Chain[U] {
 	}
 }
 
+// MapIndexed deferred 地把索引和值映射为另一个值。
+func (c Chain[T]) MapIndexed[U any](f func(int, T) U) Chain[U] {
+	if f == nil {
+		panic("gchain: nil MapIndexed function")
+	}
+
+	return Chain[U]{
+		seq: func(yield func(U) bool) {
+			index := 0
+			c.Seq()(func(value T) bool {
+				current := index
+				index++
+				return yield(f(current, value))
+			})
+		},
+	}
+}
+
 // Filter deferred 地保留匹配 f 的元素。
 func (c Chain[T]) Filter(f func(T) bool) Chain[T] {
 	if f == nil {
@@ -63,6 +81,27 @@ func (c Chain[T]) Filter(f func(T) bool) Chain[T] {
 		seq: func(yield func(T) bool) {
 			c.Seq()(func(value T) bool {
 				if !f(value) {
+					return true
+				}
+				return yield(value)
+			})
+		},
+	}
+}
+
+// FilterIndexed deferred 地按索引和值保留元素。
+func (c Chain[T]) FilterIndexed(f func(int, T) bool) Chain[T] {
+	if f == nil {
+		panic("gchain: nil FilterIndexed function")
+	}
+
+	return Chain[T]{
+		seq: func(yield func(T) bool) {
+			index := 0
+			c.Seq()(func(value T) bool {
+				current := index
+				index++
+				if !f(current, value) {
 					return true
 				}
 				return yield(value)
