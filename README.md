@@ -72,12 +72,9 @@ ports := gchain.FromMap(config).
 | Method | Returns | Description | Execution |
 | --- | --- | --- | --- |
 | `Map(func(T) U)` | `Chain[U]` | 映射元素类型。 | deferred, streaming |
-| `MapIndexed(func(int,T) U)` | `Chain[U]` | 按 index 和 value 映射元素类型。 | deferred, streaming |
 | `MapFilter(func(T) (U,bool))` | `Chain[U]` | 映射元素类型，并只保留 `keep=true` 的结果。 | deferred, streaming |
-| `MapFilterIndexed(func(int,T) (U,bool))` | `Chain[U]` | 按 index 和 value 映射元素类型，并只保留 `keep=true` 的结果。 | deferred, streaming |
 | `Concat(other)` | `Chain[T]` | 顺序拼接另一个 chain。 | deferred, streaming |
 | `Filter(func(T) bool)` | `Chain[T]` | 保留匹配元素。 | deferred, streaming |
-| `FilterIndexed(func(int,T) bool)` | `Chain[T]` | 按 index 和 value 保留匹配元素。 | deferred, streaming |
 | `Take(n)` | `Chain[T]` | 最多保留前 `n` 个元素，支持早停。 | deferred, streaming |
 | `Drop(n)` | `Chain[T]` | 跳过前 `n` 个元素。 | deferred, streaming |
 | `TakeWhile(func(T) bool)` | `Chain[T]` | 保留连续匹配的前缀元素，支持早停。 | deferred, streaming |
@@ -138,6 +135,12 @@ ports := gchain.FromMap(config).
 | `FilterKeys(func(K) bool)` | `Pairs[K,V]` | 按 key 保留匹配的 pair。 | deferred, streaming |
 | `FilterValues(func(V) bool)` | `Pairs[K,V]` | 按 value 保留匹配的 pair。 | deferred, streaming |
 | `Map(func(K,V) U)` | `Chain[U]` | 把 pair 映射为单值。 | deferred, streaming |
+| `MapFilter(func(K,V) (U,bool))` | `Chain[U]` | 映射 pair，并只保留 `keep=true` 的结果。 | deferred, streaming |
+| `Concat(other)` | `Pairs[K,V]` | 顺序拼接另一个 pair sequence。 | deferred, streaming |
+| `Take(n)` | `Pairs[K,V]` | 最多保留前 `n` 个 pair，支持早停。 | deferred, streaming |
+| `Drop(n)` | `Pairs[K,V]` | 跳过前 `n` 个 pair。 | deferred, streaming |
+| `TakeWhile(func(K,V) bool)` | `Pairs[K,V]` | 保留连续匹配的 pair 前缀，支持早停。 | deferred, streaming |
+| `DropWhile(func(K,V) bool)` | `Pairs[K,V]` | 跳过连续匹配的 pair 前缀。 | deferred, streaming |
 | `MapKeys(func(K) K2)` | `Pairs[K2,V]` | 映射 key，并保留 value。 | deferred, streaming |
 | `MapValues(func(V) U)` | `Pairs[K,U]` | 映射 value，并保留 key。 | deferred, streaming |
 | `Reverse()` | `Pairs[K,V]` | 反转 pair 顺序。 | deferred, buffering |
@@ -146,6 +149,11 @@ ports := gchain.FromMap(config).
 | `ToMap()` | `map[K]V` | 收集为 Go map，重复 key 时 last wins。 | terminal |
 | `ToPairs()` | `[]Pair[K,V]` | 收集为 pair slice。 | terminal |
 | `Count()` | `int` | 统计 pair 数量。 | terminal |
+| `First()` | `(K,V,bool)` | 返回第一个 pair，空 sequence 返回 `false`。 | terminal, early-stop |
+| `Find(func(K,V) bool)` | `(K,V,bool)` | 返回第一个匹配 pair，没有匹配返回 `false`。 | terminal, early-stop |
+| `Any(func(K,V) bool)` | `bool` | 任一 pair 匹配则返回 `true`。 | terminal, early-stop |
+| `All(func(K,V) bool)` | `bool` | 所有 pair 匹配才返回 `true`。 | terminal, early-stop |
+| `Reduce(zero, func(U,K,V) U)` | `U` | 把 pair 折叠进 accumulator。 | terminal |
 | `ForEach(func(K,V))` | 无 | 对每个 pair 执行函数。 | terminal |
 | `Seq2()` | `iter.Seq2[K,V]` | 转回标准库 pair iterator。 | adapter |
 
@@ -161,6 +169,7 @@ ports := gchain.FromMap(config).
 - `From` does not copy the slice; slice element changes before terminal consumption are visible.
 - `FromMap` does not copy the map; map changes before terminal consumption are visible.
 - `FromSeq` and `FromSeq2` follow source semantics, including single-use iterators.
+- Use `Enumerate()` before `Pairs` operations when index-aware behavior is needed; the index is the current sequence consumption order.
 - Nil slice and nil map sources produce empty results.
 - Nil operation functions panic.
 

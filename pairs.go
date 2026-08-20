@@ -114,6 +114,26 @@ func (p Pairs[K, V]) Map[U any](f func(K, V) U) Chain[U] {
 	}
 }
 
+// MapFilter deferred 地映射 key-value pair，并只保留 keep 为 true 的结果。
+func (p Pairs[K, V]) MapFilter[U any](f func(K, V) (U, bool)) Chain[U] {
+	if f == nil {
+		panic("gchain: nil MapFilter function")
+	}
+
+	return Chain[U]{
+		size: p.size.asUpperBound(),
+		seq: func(yield func(U) bool) {
+			p.Seq2()(func(key K, value V) bool {
+				mapped, keep := f(key, value)
+				if !keep {
+					return true
+				}
+				return yield(mapped)
+			})
+		},
+	}
+}
+
 // MapKeys deferred 地映射 key，并保留 value。
 func (p Pairs[K, V]) MapKeys[K2 comparable](f func(K) K2) Pairs[K2, V] {
 	if f == nil {
@@ -141,6 +161,115 @@ func (p Pairs[K, V]) MapValues[U any](f func(V) U) Pairs[K, U] {
 		seq: func(yield func(K, U) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				return yield(key, f(value))
+			})
+		},
+	}
+}
+
+// Concat deferred 地把当前 pair sequence 和另一个 pair sequence 顺序拼接。
+func (p Pairs[K, V]) Concat(other Pairs[K, V]) Pairs[K, V] {
+	return Pairs[K, V]{
+		size: p.size.concat(other.size),
+		seq: func(yield func(K, V) bool) {
+			keepGoing := true
+			p.Seq2()(func(key K, value V) bool {
+				if !yield(key, value) {
+					keepGoing = false
+					return false
+				}
+				return true
+			})
+			if !keepGoing {
+				return
+			}
+			other.Seq2()(func(key K, value V) bool {
+				return yield(key, value)
+			})
+		},
+	}
+}
+
+// Take deferred 地保留最多 n 个 pair。
+func (p Pairs[K, V]) Take(n int) Pairs[K, V] {
+	if n < 0 {
+		panic("gchain: negative Take count")
+	}
+
+	return Pairs[K, V]{
+		size: p.size.take(n),
+		seq: func(yield func(K, V) bool) {
+			if n == 0 {
+				return
+			}
+
+			count := 0
+			p.Seq2()(func(key K, value V) bool {
+				count++
+				if !yield(key, value) {
+					return false
+				}
+				return count < n
+			})
+		},
+	}
+}
+
+// Drop deferred 地跳过前 n 个 pair。
+func (p Pairs[K, V]) Drop(n int) Pairs[K, V] {
+	if n < 0 {
+		panic("gchain: negative Drop count")
+	}
+
+	return Pairs[K, V]{
+		size: p.size.drop(n),
+		seq: func(yield func(K, V) bool) {
+			skipped := 0
+			p.Seq2()(func(key K, value V) bool {
+				if skipped < n {
+					skipped++
+					return true
+				}
+				return yield(key, value)
+			})
+		},
+	}
+}
+
+// TakeWhile deferred 地保留前缀中连续匹配 f 的 pair，并在首次不匹配时停止消费。
+func (p Pairs[K, V]) TakeWhile(f func(K, V) bool) Pairs[K, V] {
+	if f == nil {
+		panic("gchain: nil TakeWhile function")
+	}
+
+	return Pairs[K, V]{
+		size: p.size.asUpperBound(),
+		seq: func(yield func(K, V) bool) {
+			p.Seq2()(func(key K, value V) bool {
+				if !f(key, value) {
+					return false
+				}
+				return yield(key, value)
+			})
+		},
+	}
+}
+
+// DropWhile deferred 地跳过前缀中连续匹配 f 的 pair。
+func (p Pairs[K, V]) DropWhile(f func(K, V) bool) Pairs[K, V] {
+	if f == nil {
+		panic("gchain: nil DropWhile function")
+	}
+
+	return Pairs[K, V]{
+		size: p.size.asUpperBound(),
+		seq: func(yield func(K, V) bool) {
+			dropping := true
+			p.Seq2()(func(key K, value V) bool {
+				if dropping && f(key, value) {
+					return true
+				}
+				dropping = false
+				return yield(key, value)
 			})
 		},
 	}
@@ -221,6 +350,89 @@ func (p Pairs[K, V]) Count() int {
 		return true
 	})
 	return count
+}
+
+// First 最多消费一个 pair。
+func (p Pairs[K, V]) First() (K, V, bool) {
+	var firstKey K
+	var firstValue V
+	ok := false
+	p.Seq2()(func(key K, value V) bool {
+		firstKey = key
+		firstValue = value
+		ok = true
+		return false
+	})
+	return firstKey, firstValue, ok
+}
+
+// Find 返回第一个匹配 f 的 pair，并在首次匹配后停止。
+func (p Pairs[K, V]) Find(f func(K, V) bool) (K, V, bool) {
+	if f == nil {
+		panic("gchain: nil Find function")
+	}
+
+	var foundKey K
+	var foundValue V
+	ok := false
+	p.Seq2()(func(key K, value V) bool {
+		if !f(key, value) {
+			return true
+		}
+		foundKey = key
+		foundValue = value
+		ok = true
+		return false
+	})
+	return foundKey, foundValue, ok
+}
+
+// Any 判断是否有任一 pair 匹配 f，并在首次匹配后停止。
+func (p Pairs[K, V]) Any(f func(K, V) bool) bool {
+	if f == nil {
+		panic("gchain: nil Any function")
+	}
+
+	found := false
+	p.Seq2()(func(key K, value V) bool {
+		if !f(key, value) {
+			return true
+		}
+		found = true
+		return false
+	})
+	return found
+}
+
+// All 判断是否所有 pair 都匹配 f，并在首次不匹配后停止。
+func (p Pairs[K, V]) All(f func(K, V) bool) bool {
+	if f == nil {
+		panic("gchain: nil All function")
+	}
+
+	all := true
+	p.Seq2()(func(key K, value V) bool {
+		if f(key, value) {
+			return true
+		}
+		all = false
+		return false
+	})
+	return all
+}
+
+// Reduce 消费 Pairs，并把每个 key-value pair 折叠进 accumulator。
+func (p Pairs[K, V]) Reduce[U any](zero U, f func(U, K, V) U) U {
+	if f == nil {
+		panic("gchain: nil Reduce function")
+	}
+
+	acc := zero
+	p.Seq2()(func(key K, value V) bool {
+		acc = f(acc, key, value)
+		return true
+	})
+	return acc
 }
 
 // ForEach 消费 Pairs，并对每个 key-value pair 调用 f。

@@ -70,16 +70,17 @@ func TestMapFilterOperations(t *testing.T) {
 		}
 	})
 
-	t.Run("MapFilterIndexed", func(t *testing.T) {
+	t.Run("EnumerateMapFilter", func(t *testing.T) {
 		got := gchain.From([]string{"a", "b", "c", "d"}).
-			MapFilterIndexed(func(index int, value string) (string, bool) {
+			Enumerate().
+			MapFilter(func(index int, value string) (string, bool) {
 				keep := index%2 == 1
 				return strings.Repeat(value, index+1), keep
 			}).
 			ToSlice()
 
 		if !reflect.DeepEqual(got, []string{"bb", "dddd"}) {
-			t.Fatalf("MapFilterIndexed().ToSlice()=%v, want [bb dddd]", got)
+			t.Fatalf("Enumerate().MapFilter().ToSlice()=%v, want [bb dddd]", got)
 		}
 	})
 
@@ -157,23 +158,26 @@ func TestConcatOperation(t *testing.T) {
 	})
 }
 
-func TestIndexedOperations(t *testing.T) {
+func TestEnumerateOperations(t *testing.T) {
 	mapped := gchain.From([]string{"a", "b", "c"}).
-		MapIndexed(func(index int, value string) string {
+		Enumerate().
+		Map(func(index int, value string) string {
 			return strings.Repeat(value, index+1)
 		}).
 		ToSlice()
 	if !reflect.DeepEqual(mapped, []string{"a", "bb", "ccc"}) {
-		t.Fatalf("MapIndexed().ToSlice()=%v, want [a bb ccc]", mapped)
+		t.Fatalf("Enumerate().Map().ToSlice()=%v, want [a bb ccc]", mapped)
 	}
 
 	filtered := gchain.From([]string{"a", "b", "c", "d"}).
-		FilterIndexed(func(index int, value string) bool {
+		Enumerate().
+		Filter(func(index int, value string) bool {
 			return index%2 == 0 || value == "d"
 		}).
+		Values().
 		ToSlice()
 	if !reflect.DeepEqual(filtered, []string{"a", "c", "d"}) {
-		t.Fatalf("FilterIndexed().ToSlice()=%v, want [a c d]", filtered)
+		t.Fatalf("Enumerate().Filter().Values().ToSlice()=%v, want [a c d]", filtered)
 	}
 }
 
@@ -733,11 +737,8 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { _ = gchain.From([]int{}).FlatMap[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).DistinctBy[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Map[int](nil) })
-	mustPanic(t, func() { _ = gchain.From([]int{}).MapIndexed[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).MapFilter[int](nil) })
-	mustPanic(t, func() { _ = gchain.From([]int{}).MapFilterIndexed[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Filter(nil) })
-	mustPanic(t, func() { _ = gchain.From([]int{}).FilterIndexed(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Take(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Drop(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).TakeWhile(nil) })
@@ -767,8 +768,17 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { _ = pairs.FilterKeys(nil) })
 	mustPanic(t, func() { _ = pairs.FilterValues(nil) })
 	mustPanic(t, func() { _ = pairs.Map[int](nil) })
+	mustPanic(t, func() { _ = pairs.MapFilter[int](nil) })
 	mustPanic(t, func() { _ = pairs.MapKeys[string](nil) })
 	mustPanic(t, func() { _ = pairs.MapValues[int](nil) })
+	mustPanic(t, func() { _ = pairs.Take(-1) })
+	mustPanic(t, func() { _ = pairs.Drop(-1) })
+	mustPanic(t, func() { _ = pairs.TakeWhile(nil) })
+	mustPanic(t, func() { _ = pairs.DropWhile(nil) })
+	mustPanic(t, func() { _, _, _ = pairs.Find(nil) })
+	mustPanic(t, func() { _ = pairs.Any(nil) })
+	mustPanic(t, func() { _ = pairs.All(nil) })
+	mustPanic(t, func() { _ = pairs.Reduce(0, nil) })
 	mustPanic(t, func() { pairs.ForEach(nil) })
 
 	groups := gchain.From([]int{1}).GroupBy(func(value int) int { return value })
@@ -846,6 +856,115 @@ func TestPairsOperations(t *testing.T) {
 		{Key: "b", Value: 2},
 	}) {
 		t.Fatalf("ToPairs()=%v, want sorted pairs", pairs)
+	}
+
+	orderedPairs := func() gchain.Pairs[string, int] {
+		return gchain.FromSeq2(func(yield func(string, int) bool) {
+			for _, pair := range []gchain.Pair[string, int]{
+				{Key: "a", Value: 1},
+				{Key: "b", Value: 2},
+				{Key: "c", Value: 3},
+			} {
+				if !yield(pair.Key, pair.Value) {
+					return
+				}
+			}
+		})
+	}
+
+	filteredLabels := orderedPairs().
+		MapFilter(func(key string, value int) (string, bool) {
+			return key + strings.Repeat("!", value), value%2 == 1
+		}).
+		ToSlice()
+	if !reflect.DeepEqual(filteredLabels, []string{"a!", "c!!!"}) {
+		t.Fatalf("Pairs.MapFilter().ToSlice()=%v, want [a! c!!!]", filteredLabels)
+	}
+
+	concatenated := orderedPairs().
+		Concat(gchain.FromSeq2(func(yield func(string, int) bool) {
+			yield("d", 4)
+		})).
+		Drop(1).
+		Take(3).
+		ToPairs()
+	if !reflect.DeepEqual(concatenated, []gchain.Pair[string, int]{
+		{Key: "b", Value: 2},
+		{Key: "c", Value: 3},
+		{Key: "d", Value: 4},
+	}) {
+		t.Fatalf("Pairs.Concat().Drop().Take().ToPairs()=%v, want b/c/d", concatenated)
+	}
+
+	prefix := orderedPairs().
+		TakeWhile(func(key string, value int) bool {
+			return value < 3
+		}).
+		ToPairs()
+	if !reflect.DeepEqual(prefix, []gchain.Pair[string, int]{
+		{Key: "a", Value: 1},
+		{Key: "b", Value: 2},
+	}) {
+		t.Fatalf("Pairs.TakeWhile().ToPairs()=%v, want a/b", prefix)
+	}
+
+	suffix := orderedPairs().
+		DropWhile(func(key string, value int) bool {
+			return value < 3
+		}).
+		ToPairs()
+	if !reflect.DeepEqual(suffix, []gchain.Pair[string, int]{{Key: "c", Value: 3}}) {
+		t.Fatalf("Pairs.DropWhile().ToPairs()=%v, want c", suffix)
+	}
+
+	firstKey, firstValue, ok := orderedPairs().First()
+	if firstKey != "a" || firstValue != 1 || !ok {
+		t.Fatalf("Pairs.First()=(%q, %d, %v), want (a, 1, true)", firstKey, firstValue, ok)
+	}
+
+	foundKey, foundValue, found := orderedPairs().Find(func(key string, value int) bool {
+		return value == 2
+	})
+	if foundKey != "b" || foundValue != 2 || !found {
+		t.Fatalf("Pairs.Find()=(%q, %d, %v), want (b, 2, true)", foundKey, foundValue, found)
+	}
+
+	if !orderedPairs().Any(func(key string, value int) bool {
+		return key == "c"
+	}) {
+		t.Fatal("Pairs.Any()=false, want true")
+	}
+
+	if orderedPairs().All(func(key string, value int) bool {
+		return value < 3
+	}) {
+		t.Fatal("Pairs.All()=true, want false")
+	}
+
+	sum := orderedPairs().Reduce(0, func(acc int, key string, value int) int {
+		return acc + len(key) + value
+	})
+	if sum != 9 {
+		t.Fatalf("Pairs.Reduce()=%d, want 9", sum)
+	}
+
+	pulled := 0
+	_, _, _ = gchain.FromSeq2(func(yield func(string, int) bool) {
+		for _, pair := range []gchain.Pair[string, int]{
+			{Key: "a", Value: 1},
+			{Key: "b", Value: 2},
+			{Key: "c", Value: 3},
+		} {
+			pulled++
+			if !yield(pair.Key, pair.Value) {
+				return
+			}
+		}
+	}).Find(func(key string, value int) bool {
+		return value == 2
+	})
+	if pulled != 2 {
+		t.Fatalf("Pairs.Find pulled=%d, want 2", pulled)
 	}
 }
 
