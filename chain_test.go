@@ -44,6 +44,119 @@ func TestMapFilterDeferred(t *testing.T) {
 	}
 }
 
+func TestMapFilterOperations(t *testing.T) {
+	t.Run("MapFilter", func(t *testing.T) {
+		calls := 0
+
+		chain := gchain.From([]int{1, 2, 3, 4}).
+			MapFilter(func(value int) (string, bool) {
+				calls++
+				keep := value%2 == 0
+				return strings.Repeat("x", value/2), keep
+			})
+
+		if calls != 0 {
+			t.Fatalf("MapFilter ran before terminal operation: calls=%d", calls)
+		}
+
+		got := chain.ToSlice()
+		want := []string{"x", "xx"}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("MapFilter().ToSlice()=%v, want %v", got, want)
+		}
+		if calls != 4 {
+			t.Fatalf("MapFilter calls=%d, want 4", calls)
+		}
+	})
+
+	t.Run("MapFilterIndexed", func(t *testing.T) {
+		got := gchain.From([]string{"a", "b", "c", "d"}).
+			MapFilterIndexed(func(index int, value string) (string, bool) {
+				keep := index%2 == 1
+				return strings.Repeat(value, index+1), keep
+			}).
+			ToSlice()
+
+		if !reflect.DeepEqual(got, []string{"bb", "dddd"}) {
+			t.Fatalf("MapFilterIndexed().ToSlice()=%v, want [bb dddd]", got)
+		}
+	})
+
+	t.Run("StopsAfterDownstreamStop", func(t *testing.T) {
+		pulled := 0
+		calls := 0
+
+		got := gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{1, 2, 3, 4} {
+				pulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}).
+			MapFilter(func(value int) (int, bool) {
+				calls++
+				keep := value%2 == 0
+				return value * 10, keep
+			}).
+			Take(1).
+			ToSlice()
+
+		if !reflect.DeepEqual(got, []int{20}) {
+			t.Fatalf("MapFilter().Take(1).ToSlice()=%v, want [20]", got)
+		}
+		if pulled != 2 || calls != 2 {
+			t.Fatalf("pulled=%d calls=%d, want 2 and 2", pulled, calls)
+		}
+	})
+}
+
+func TestConcatOperation(t *testing.T) {
+	t.Run("ToSlice", func(t *testing.T) {
+		got := gchain.From([]int{1, 2}).
+			Concat(gchain.From([]int{3, 4})).
+			ToSlice()
+
+		if !reflect.DeepEqual(got, []int{1, 2, 3, 4}) {
+			t.Fatalf("Concat().ToSlice()=%v, want [1 2 3 4]", got)
+		}
+	})
+
+	t.Run("DeferredAndEarlyStop", func(t *testing.T) {
+		leftPulled := 0
+		rightPulled := 0
+
+		chain := gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{1, 2, 3} {
+				leftPulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}).Concat(gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{4, 5} {
+				rightPulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}))
+
+		if leftPulled != 0 || rightPulled != 0 {
+			t.Fatalf("Concat ran before terminal operation: left=%d right=%d", leftPulled, rightPulled)
+		}
+
+		got := chain.Take(2).ToSlice()
+		if !reflect.DeepEqual(got, []int{1, 2}) {
+			t.Fatalf("Concat().Take(2).ToSlice()=%v, want [1 2]", got)
+		}
+		if leftPulled != 2 || rightPulled != 0 {
+			t.Fatalf("leftPulled=%d rightPulled=%d, want 2 and 0", leftPulled, rightPulled)
+		}
+	})
+}
+
 func TestIndexedOperations(t *testing.T) {
 	mapped := gchain.From([]string{"a", "b", "c"}).
 		MapIndexed(func(index int, value string) string {
@@ -64,6 +177,7 @@ func TestIndexedOperations(t *testing.T) {
 	}
 }
 
+// nolint
 func TestEarlyStopOperations(t *testing.T) {
 	t.Run("First", func(t *testing.T) {
 		pulled := 0
@@ -104,6 +218,38 @@ func TestEarlyStopOperations(t *testing.T) {
 		}
 		if pulled != 3 {
 			t.Fatalf("pulled=%d, want 3", pulled)
+		}
+	})
+
+	t.Run("Find", func(t *testing.T) {
+		pulled := 0
+
+		found, ok := gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{1, 2, 3, 4} {
+				pulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}).Find(func(value int) bool {
+			return value == 3
+		})
+
+		if found != 3 || !ok {
+			t.Fatalf("Find()=(%d, %v), want (3, true)", found, ok)
+		}
+		if pulled != 3 {
+			t.Fatalf("pulled=%d, want 3", pulled)
+		}
+	})
+
+	t.Run("FindNone", func(t *testing.T) {
+		found, ok := gchain.From([]int{1, 2}).Find(func(value int) bool {
+			return value == 3
+		})
+
+		if found != 0 || ok {
+			t.Fatalf("Find()=(%d, %v), want (0, false)", found, ok)
 		}
 	})
 
@@ -166,6 +312,161 @@ func TestEarlyStopOperations(t *testing.T) {
 		}
 		if pulled != 0 {
 			t.Fatalf("pulled=%d, want 0", pulled)
+		}
+	})
+}
+
+func TestTakeDropWhileOperations(t *testing.T) {
+	t.Run("TakeWhile", func(t *testing.T) {
+		pulled := 0
+		calls := 0
+
+		got := gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{1, 2, 3, 4} {
+				pulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}).
+			TakeWhile(func(value int) bool {
+				calls++
+				return value < 3
+			}).
+			ToSlice()
+
+		if !reflect.DeepEqual(got, []int{1, 2}) {
+			t.Fatalf("TakeWhile().ToSlice()=%v, want [1 2]", got)
+		}
+		if pulled != 3 || calls != 3 {
+			t.Fatalf("pulled=%d calls=%d, want 3 and 3", pulled, calls)
+		}
+	})
+
+	t.Run("DropWhile", func(t *testing.T) {
+		calls := 0
+
+		got := gchain.From([]int{1, 2, 3, 1}).
+			DropWhile(func(value int) bool {
+				calls++
+				return value < 3
+			}).
+			ToSlice()
+
+		if !reflect.DeepEqual(got, []int{3, 1}) {
+			t.Fatalf("DropWhile().ToSlice()=%v, want [3 1]", got)
+		}
+		if calls != 3 {
+			t.Fatalf("DropWhile calls=%d, want 3", calls)
+		}
+	})
+
+	t.Run("AllPrefixMatches", func(t *testing.T) {
+		got := gchain.From([]int{1, 2}).
+			DropWhile(func(value int) bool {
+				return value < 3
+			}).
+			ToSlice()
+
+		if len(got) != 0 {
+			t.Fatalf("DropWhile().ToSlice()=%v, want empty", got)
+		}
+	})
+}
+
+func TestChunkOperation(t *testing.T) {
+	t.Run("ToSlice", func(t *testing.T) {
+		pulled := 0
+
+		chain := gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{1, 2, 3, 4, 5} {
+				pulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}).Chunk(2)
+
+		if pulled != 0 {
+			t.Fatalf("Chunk ran before terminal operation: pulled=%d", pulled)
+		}
+
+		got := chain.ToSlice()
+		want := [][]int{{1, 2}, {3, 4}, {5}}
+
+		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("Chunk(2).ToSlice()=%v, want %v", got, want)
+		}
+		if pulled != 5 {
+			t.Fatalf("pulled=%d, want 5", pulled)
+		}
+	})
+
+	t.Run("IndependentSlices", func(t *testing.T) {
+		got := gchain.From([]int{1, 2, 3, 4}).
+			Chunk(2).
+			ToSlice()
+
+		got[0][0] = 99
+		if !reflect.DeepEqual(got, [][]int{{99, 2}, {3, 4}}) {
+			t.Fatalf("Chunk returned shared slices: got %v", got)
+		}
+	})
+
+	t.Run("EarlyStop", func(t *testing.T) {
+		pulled := 0
+
+		got := gchain.FromSeq(func(yield func(int) bool) {
+			for _, value := range []int{1, 2, 3, 4} {
+				pulled++
+				if !yield(value) {
+					return
+				}
+			}
+		}).
+			Chunk(2).
+			Take(1).
+			ToSlice()
+
+		if !reflect.DeepEqual(got, [][]int{{1, 2}}) {
+			t.Fatalf("Chunk(2).Take(1).ToSlice()=%v, want [[1 2]]", got)
+		}
+		if pulled != 2 {
+			t.Fatalf("pulled=%d, want 2", pulled)
+		}
+	})
+
+	t.Run("ChunkMethods", func(t *testing.T) {
+		chunks := gchain.From([]int{1, 2, 3, 4, 5}).
+			Chunk(2).
+			Filter(func(chunk []int) bool {
+				return len(chunk) == 2
+			})
+
+		first, ok := chunks.First()
+		if !reflect.DeepEqual(first, []int{1, 2}) || !ok {
+			t.Fatalf("Chunks.First()=(%v, %v), want ([1 2], true)", first, ok)
+		}
+		if count := chunks.Count(); count != 2 {
+			t.Fatalf("Chunks.Count()=%d, want 2", count)
+		}
+
+		sums := chunks.
+			Drop(1).
+			Map(func(chunk []int) int {
+				return chunk[0] + chunk[1]
+			}).
+			ToSlice()
+		if !reflect.DeepEqual(sums, []int{7}) {
+			t.Fatalf("Chunks.Map().ToSlice()=%v, want [7]", sums)
+		}
+
+		seen := make([][]int, 0)
+		chunks.Take(1).ForEach(func(chunk []int) {
+			seen = append(seen, chunk)
+		})
+		if !reflect.DeepEqual(seen, [][]int{{1, 2}}) {
+			t.Fatalf("Chunks.ForEach() saw %v, want [[1 2]]", seen)
 		}
 	})
 }
@@ -379,11 +680,18 @@ func TestCollectors(t *testing.T) {
 		t.Fatalf("ToGroups()=%v, want platform=2 edge=1", groups)
 	}
 
-	sum := gchain.From([]int{1, 2, 3}).Reduce(10, func(acc int, value int) int {
+	sum := gchain.From([]int{1, 2, 3}).Reduce(10, func(acc, value int) int {
 		return acc + value
 	})
 	if sum != 16 {
 		t.Fatalf("Reduce()=%d, want 16", sum)
+	}
+
+	counts := gchain.From(users).CountBy(func(user testUser) string {
+		return user.Team
+	})
+	if !reflect.DeepEqual(counts, map[string]int{"platform": 2, "edge": 1}) {
+		t.Fatalf("CountBy()=%v, want platform=2 edge=1", counts)
 	}
 }
 
@@ -426,18 +734,33 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { _ = gchain.From([]int{}).DistinctBy[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Map[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).MapIndexed[int](nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).MapFilter[int](nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).MapFilterIndexed[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Filter(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).FilterIndexed(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Take(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Drop(-1) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).TakeWhile(nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).DropWhile(nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).Chunk(0) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).Chunk(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).GroupBy[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).ToMap[int, int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).ToMapBy[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).ToGroups[int](nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).CountBy[int](nil) })
+	mustPanic(t, func() { _, _ = gchain.From([]int{}).Find(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Any(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).All(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Reduce(0, nil) })
 	mustPanic(t, func() { gchain.From([]int{}).ForEach(nil) })
+
+	chunks := gchain.From([]int{1}).Chunk(1)
+	mustPanic(t, func() { _ = chunks.Filter(nil) })
+	mustPanic(t, func() { _ = chunks.Map[int](nil) })
+	mustPanic(t, func() { _ = chunks.Take(-1) })
+	mustPanic(t, func() { _ = chunks.Drop(-1) })
+	mustPanic(t, func() { chunks.ForEach(nil) })
 
 	pairs := gchain.FromMap(map[string]int{})
 	mustPanic(t, func() { _ = pairs.Filter(nil) })

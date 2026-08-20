@@ -73,3 +73,31 @@ func (h sizeHint) drop(count int) sizeHint {
 		return sizeHint{}
 	}
 }
+
+func (h sizeHint) chunk(size int) sizeHint {
+	chunks := h.count / size
+	if h.count%size != 0 {
+		chunks++
+	}
+
+	switch h.kind {
+	case sizeHintExact:
+		return exactSizeHint(chunks)
+	case sizeHintUpperBound:
+		return upperBoundSizeHint(chunks)
+	default:
+		return sizeHint{}
+	}
+}
+
+func (h sizeHint) concat(other sizeHint) sizeHint {
+	if h.kind == sizeHintUnknown || other.kind == sizeHintUnknown {
+		return sizeHint{}
+	}
+
+	count := h.count + other.count
+	if h.kind == sizeHintExact && other.kind == sizeHintExact {
+		return exactSizeHint(count)
+	}
+	return upperBoundSizeHint(count)
+}

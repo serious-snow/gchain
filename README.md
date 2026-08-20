@@ -73,10 +73,16 @@ ports := gchain.FromMap(config).
 | --- | --- | --- | --- |
 | `Map(func(T) U)` | `Chain[U]` | 映射元素类型。 | deferred, streaming |
 | `MapIndexed(func(int,T) U)` | `Chain[U]` | 按 index 和 value 映射元素类型。 | deferred, streaming |
+| `MapFilter(func(T) (U,bool))` | `Chain[U]` | 映射元素类型，并只保留 `keep=true` 的结果。 | deferred, streaming |
+| `MapFilterIndexed(func(int,T) (U,bool))` | `Chain[U]` | 按 index 和 value 映射元素类型，并只保留 `keep=true` 的结果。 | deferred, streaming |
+| `Concat(other)` | `Chain[T]` | 顺序拼接另一个 chain。 | deferred, streaming |
 | `Filter(func(T) bool)` | `Chain[T]` | 保留匹配元素。 | deferred, streaming |
 | `FilterIndexed(func(int,T) bool)` | `Chain[T]` | 按 index 和 value 保留匹配元素。 | deferred, streaming |
 | `Take(n)` | `Chain[T]` | 最多保留前 `n` 个元素，支持早停。 | deferred, streaming |
 | `Drop(n)` | `Chain[T]` | 跳过前 `n` 个元素。 | deferred, streaming |
+| `TakeWhile(func(T) bool)` | `Chain[T]` | 保留连续匹配的前缀元素，支持早停。 | deferred, streaming |
+| `DropWhile(func(T) bool)` | `Chain[T]` | 跳过连续匹配的前缀元素。 | deferred, streaming |
+| `Chunk(n)` | `Chunks[T]` | 按 `n` 个元素分块，保留不足 `n` 的尾块。 | deferred, streaming |
 | `FlatMap(func(T) []U)` | `Chain[U]` | 把一个元素展开为多个元素。 | deferred, streaming |
 | `DistinctBy(func(T) K)` | `Chain[T]` | 按 key 去重，保留首次出现。 | deferred, stateful |
 | `Reverse()` | `Chain[T]` | 反转元素顺序。 | deferred, buffering |
@@ -87,12 +93,28 @@ ports := gchain.FromMap(config).
 | `ToMapBy(func(T) K)` | `map[K]T` | 用函数产出 key，原元素作为 value。 | terminal |
 | `ToGroups(func(T) K)` | `map[K][]T` | 直接收集为分组 map。 | terminal |
 | `Count()` | `int` | 统计元素数量。 | terminal |
+| `CountBy(func(T) K)` | `map[K]int` | 按 key 统计元素数量。 | terminal |
 | `First()` | `(T, bool)` | 返回第一个元素，空 chain 返回 `false`。 | terminal, early-stop |
+| `Find(func(T) bool)` | `(T, bool)` | 返回第一个匹配元素，没有匹配返回 `false`。 | terminal, early-stop |
 | `Any(func(T) bool)` | `bool` | 任一元素匹配则返回 `true`。 | terminal, early-stop |
 | `All(func(T) bool)` | `bool` | 所有元素匹配才返回 `true`。 | terminal, early-stop |
 | `Reduce(zero, func(U,T) U)` | `U` | 把元素折叠进 accumulator。 | terminal |
 | `ForEach(func(T))` | 无 | 对每个元素执行函数。 | terminal |
 | `Seq()` | `iter.Seq[T]` | 转回标准库 iterator。 | adapter |
+
+### Chunks[T]
+
+| Method | Returns | Description | Execution |
+| --- | --- | --- | --- |
+| `Filter(func([]T) bool)` | `Chunks[T]` | 保留匹配的 chunk。 | deferred, streaming over chunks |
+| `Map(func([]T) U)` | `Chain[U]` | 把 chunk 映射为单值。 | deferred, streaming over chunks |
+| `Take(n)` | `Chunks[T]` | 最多保留前 `n` 个 chunk，支持早停。 | deferred, streaming over chunks |
+| `Drop(n)` | `Chunks[T]` | 跳过前 `n` 个 chunk。 | deferred, streaming over chunks |
+| `ToSlice()` | `[][]T` | 收集为 chunk slice。 | terminal |
+| `Count()` | `int` | 统计 chunk 数量。 | terminal |
+| `First()` | `([]T, bool)` | 返回第一个 chunk，空 sequence 返回 `false`。 | terminal, early-stop |
+| `ForEach(func([]T))` | 无 | 对每个 chunk 执行函数。 | terminal |
+| `Seq()` | `iter.Seq[[]T]` | 转回标准库 iterator。 | adapter |
 
 ### Groups[K,T]
 
@@ -132,6 +154,7 @@ ports := gchain.FromMap(config).
 - Duplicate keys use last-wins semantics in `ToMap` and `Pairs.ToMap`.
 - `DistinctBy` keeps first occurrence for each key.
 - `Reverse` buffers the full source before yielding.
+- `Chunk` buffers only the current chunk and each yielded chunk has its own slice.
 - Collectors use internal capacity hints only for exact-size sources such as `From(slice)` and `FromMap(map)`.
 - `Filter` and similar operations keep only conservative size hints; they do not preallocate for discarded elements.
 - Go map iteration order is not stable.

@@ -75,6 +75,72 @@ func (c Chain[T]) MapIndexed[U any](f func(int, T) U) Chain[U] {
 	}
 }
 
+// MapFilter deferred 地映射元素，并只保留 keep 为 true 的结果。
+func (c Chain[T]) MapFilter[U any](f func(T) (U, bool)) Chain[U] {
+	if f == nil {
+		panic("gchain: nil MapFilter function")
+	}
+
+	return Chain[U]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func(U) bool) {
+			c.Seq()(func(value T) bool {
+				mapped, keep := f(value)
+				if !keep {
+					return true
+				}
+				return yield(mapped)
+			})
+		},
+	}
+}
+
+// MapFilterIndexed deferred 地按索引和值映射元素，并只保留 keep 为 true 的结果。
+func (c Chain[T]) MapFilterIndexed[U any](f func(int, T) (U, bool)) Chain[U] {
+	if f == nil {
+		panic("gchain: nil MapFilterIndexed function")
+	}
+
+	return Chain[U]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func(U) bool) {
+			index := 0
+			c.Seq()(func(value T) bool {
+				current := index
+				index++
+				mapped, keep := f(current, value)
+				if !keep {
+					return true
+				}
+				return yield(mapped)
+			})
+		},
+	}
+}
+
+// Concat deferred 地把当前 sequence 和另一个 sequence 顺序拼接。
+func (c Chain[T]) Concat(other Chain[T]) Chain[T] {
+	return Chain[T]{
+		size: c.size.concat(other.size),
+		seq: func(yield func(T) bool) {
+			keepGoing := true
+			c.Seq()(func(value T) bool {
+				if !yield(value) {
+					keepGoing = false
+					return false
+				}
+				return true
+			})
+			if !keepGoing {
+				return
+			}
+			other.Seq()(func(value T) bool {
+				return yield(value)
+			})
+		},
+	}
+}
+
 // Filter deferred 地保留匹配 f 的元素。
 func (c Chain[T]) Filter(f func(T) bool) Chain[T] {
 	if f == nil {
@@ -158,6 +224,73 @@ func (c Chain[T]) Drop(n int) Chain[T] {
 				}
 				return yield(value)
 			})
+		},
+	}
+}
+
+// TakeWhile deferred 地保留前缀中连续匹配 f 的元素，并在首次不匹配时停止消费。
+func (c Chain[T]) TakeWhile(f func(T) bool) Chain[T] {
+	if f == nil {
+		panic("gchain: nil TakeWhile function")
+	}
+
+	return Chain[T]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func(T) bool) {
+			c.Seq()(func(value T) bool {
+				if !f(value) {
+					return false
+				}
+				return yield(value)
+			})
+		},
+	}
+}
+
+// DropWhile deferred 地跳过前缀中连续匹配 f 的元素。
+func (c Chain[T]) DropWhile(f func(T) bool) Chain[T] {
+	if f == nil {
+		panic("gchain: nil DropWhile function")
+	}
+
+	return Chain[T]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func(T) bool) {
+			dropping := true
+			c.Seq()(func(value T) bool {
+				if dropping && f(value) {
+					return true
+				}
+				dropping = false
+				return yield(value)
+			})
+		},
+	}
+}
+
+// Chunk deferred 地按 n 个元素分块，并保留不足 n 的尾块。
+func (c Chain[T]) Chunk(n int) Chunks[T] {
+	if n <= 0 {
+		panic("gchain: non-positive Chunk size")
+	}
+
+	return Chunks[T]{
+		size: c.size.chunk(n),
+		seq: func(yield func([]T) bool) {
+			chunk := make([]T, 0, n)
+			c.Seq()(func(value T) bool {
+				chunk = append(chunk, value)
+				if len(chunk) < n {
+					return true
+				}
+
+				current := chunk
+				chunk = make([]T, 0, n)
+				return yield(current)
+			})
+			if len(chunk) > 0 {
+				yield(chunk)
+			}
 		},
 	}
 }
@@ -334,6 +467,20 @@ func (c Chain[T]) Count() int {
 	return count
 }
 
+// CountBy 按 key 统计元素数量。
+func (c Chain[T]) CountBy[K comparable](f func(T) K) map[K]int {
+	if f == nil {
+		panic("gchain: nil CountBy function")
+	}
+
+	counts := make(map[K]int)
+	c.Seq()(func(value T) bool {
+		counts[f(value)]++
+		return true
+	})
+	return counts
+}
+
 // First 最多消费一个元素。
 func (c Chain[T]) First() (T, bool) {
 	var first T
@@ -344,6 +491,25 @@ func (c Chain[T]) First() (T, bool) {
 		return false
 	})
 	return first, ok
+}
+
+// Find 返回第一个匹配 f 的元素，并在首次匹配后停止。
+func (c Chain[T]) Find(f func(T) bool) (T, bool) {
+	if f == nil {
+		panic("gchain: nil Find function")
+	}
+
+	var found T
+	ok := false
+	c.Seq()(func(value T) bool {
+		if !f(value) {
+			return true
+		}
+		found = value
+		ok = true
+		return false
+	})
+	return found, ok
 }
 
 // Any 判断是否有任一元素匹配 f，并在首次匹配后停止。
