@@ -600,6 +600,57 @@ func TestGroupByDeferredBufferingAndSinglePass(t *testing.T) {
 	}
 }
 
+func TestGroupMapOperations(t *testing.T) {
+	pulled := 0
+	calls := 0
+
+	groups := gchain.FromSeq(func(yield func(testUser) bool) {
+		for _, user := range []testUser{
+			{ID: "1", Name: "Ada", Team: "platform"},
+			{ID: "2", Name: "Ben", Team: "edge"},
+			{ID: "3", Name: "Cy", Team: "platform"},
+		} {
+			pulled++
+			if !yield(user) {
+				return
+			}
+		}
+	}).GroupMap(func(user testUser) (string, string) {
+		calls++
+		return user.Team, user.Name
+	})
+
+	if pulled != 0 || calls != 0 {
+		t.Fatalf("GroupMap ran before terminal operation: pulled=%d calls=%d", pulled, calls)
+	}
+
+	got := groups.ToMap()
+	want := map[string][]string{
+		"platform": {"Ada", "Cy"},
+		"edge":     {"Ben"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("GroupMap().ToMap()=%v, want %v", got, want)
+	}
+	if pulled != 3 || calls != 3 {
+		t.Fatalf("pulled=%d calls=%d, want 3 and 3", pulled, calls)
+	}
+
+	direct := gchain.From([]testUser{
+		{ID: "1", Team: "platform", Active: true},
+		{ID: "2", Team: "edge", Active: false},
+		{ID: "3", Team: "platform", Active: false},
+	}).ToGroupMap(func(user testUser) (string, bool) {
+		return user.Team, user.Active
+	})
+	if !reflect.DeepEqual(direct, map[string][]bool{
+		"platform": {true, false},
+		"edge":     {false},
+	}) {
+		t.Fatalf("ToGroupMap()=%v, want platform/edge active flags", direct)
+	}
+}
+
 func TestGroupsOperations(t *testing.T) {
 	groups := gchain.From([]testUser{
 		{ID: "1", Team: "platform", Active: true},
@@ -746,9 +797,11 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { _ = gchain.From([]int{}).Chunk(0) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Chunk(-1) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).GroupBy[int](nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).GroupMap[int, int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).ToMap[int, int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).ToMapBy[int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).ToGroups[int](nil) })
+	mustPanic(t, func() { _ = gchain.From([]int{}).ToGroupMap[int, int](nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).CountBy[int](nil) })
 	mustPanic(t, func() { _, _ = gchain.From([]int{}).Find(nil) })
 	mustPanic(t, func() { _ = gchain.From([]int{}).Any(nil) })
@@ -788,6 +841,7 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { groups.ForEach(nil) })
 }
 
+// nolint
 func TestPairsOperations(t *testing.T) {
 	got := gchain.FromMap(map[string]int{
 		"a": 1,

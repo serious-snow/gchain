@@ -85,10 +85,12 @@ ports := gchain.FromMap(config).
 | `Reverse()` | `Chain[T]` | 反转元素顺序。 | deferred, buffering |
 | `Enumerate()` | `Pairs[int,T]` | 给元素附加从 0 开始的索引。 | deferred, streaming |
 | `GroupBy(func(T) K)` | `Groups[K,T]` | 按 key 分组为 `[]T`。 | deferred, buffering |
+| `GroupMap(func(T) (K,V))` | `Groups[K,V]` | 按 key 分组，并把元素映射为 group value。 | deferred, buffering |
 | `ToSlice()` | `[]T` | 收集为 slice。 | terminal |
 | `ToMap(func(T) (K,V))` | `map[K]V` | 用函数产出 key-value，重复 key 时 last wins。 | terminal |
 | `ToMapBy(func(T) K)` | `map[K]T` | 用函数产出 key，原元素作为 value。 | terminal |
 | `ToGroups(func(T) K)` | `map[K][]T` | 直接收集为分组 map。 | terminal |
+| `ToGroupMap(func(T) (K,V))` | `map[K][]V` | 用函数产出 key-value，并直接收集为分组 map。 | terminal |
 | `Count()` | `int` | 统计元素数量。 | terminal |
 | `CountBy(func(T) K)` | `map[K]int` | 按 key 统计元素数量。 | terminal |
 | `First()` | `(T, bool)` | 返回第一个元素，空 chain 返回 `false`。 | terminal, early-stop |

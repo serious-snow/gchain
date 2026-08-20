@@ -335,6 +335,34 @@ func (c Chain[T]) GroupBy[K comparable](key func(T) K) Groups[K, T] {
 	}
 }
 
+// GroupMap 在 terminal consumption 期间按 key 聚合映射后的 value。
+//
+// GroupMap 是 deferred operation，也是 buffering operation：消费时读取上游一次，
+// 并保留映射后的分组结果，然后再产出完整分组。
+func (c Chain[T]) GroupMap[K comparable, V any](f func(T) (K, V)) Groups[K, V] {
+	if f == nil {
+		panic("gchain: nil GroupMap function")
+	}
+
+	return Groups[K, V]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func(K, []V) bool) {
+			groups := make(map[K][]V)
+			c.Seq()(func(value T) bool {
+				groupKey, mapped := f(value)
+				groups[groupKey] = append(groups[groupKey], mapped)
+				return true
+			})
+
+			for groupKey, values := range groups {
+				if !yield(groupKey, values) {
+					return
+				}
+			}
+		},
+	}
+}
+
 // ToSlice 消费 Chain，并返回包含全部元素的 slice。
 func (c Chain[T]) ToSlice() []T {
 	values := make([]T, 0, c.size.exactCapacity())
@@ -388,6 +416,21 @@ func (c Chain[T]) ToGroups[K comparable](f func(T) K) map[K][]T {
 	c.Seq()(func(value T) bool {
 		key := f(value)
 		groups[key] = append(groups[key], value)
+		return true
+	})
+	return groups
+}
+
+// ToGroupMap 使用 f 产出 key-value pair，并把 Chain 消费为 map[K][]V。
+func (c Chain[T]) ToGroupMap[K comparable, V any](f func(T) (K, V)) map[K][]V {
+	if f == nil {
+		panic("gchain: nil ToGroupMap function")
+	}
+
+	groups := make(map[K][]V)
+	c.Seq()(func(value T) bool {
+		key, mapped := f(value)
+		groups[key] = append(groups[key], mapped)
 		return true
 	})
 	return groups
