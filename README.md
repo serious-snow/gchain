@@ -12,7 +12,7 @@ GChain 是一个 Go 1.27+ 的链式集合库，面向 slice、Go map 和标准�
 ## Installation
 
 ```sh
-go get github.com/serious-snow/gchain@v0.0.1
+go get github.com/serious-snow/gchain@latest
 ```
 
 ```go
