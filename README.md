@@ -132,6 +132,8 @@ ports := gchain.FromMap(config).
 - Duplicate keys use last-wins semantics in `ToMap` and `Pairs.ToMap`.
 - `DistinctBy` keeps first occurrence for each key.
 - `Reverse` buffers the full source before yielding.
+- Collectors use internal capacity hints only for exact-size sources such as `From(slice)` and `FromMap(map)`.
+- `Filter` and similar operations keep only conservative size hints; they do not preallocate for discarded elements.
 - Go map iteration order is not stable.
 - `From` does not copy the slice; slice element changes before terminal consumption are visible.
 - `FromMap` does not copy the map; map changes before terminal consumption are visible.

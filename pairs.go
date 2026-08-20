@@ -10,12 +10,14 @@ type Pair[K any, V any] struct {
 
 // Pairs 表示 key-value 的 deferred sequence。
 type Pairs[K comparable, V any] struct {
-	seq iter.Seq2[K, V]
+	seq  iter.Seq2[K, V]
+	size sizeHint
 }
 
 // FromMap 从 Go map 创建 Pairs，不复制元素。
 func FromMap[Map ~map[K]V, K comparable, V any](values Map) Pairs[K, V] {
 	return Pairs[K, V]{
+		size: exactSizeHint(len(values)),
 		seq: func(yield func(K, V) bool) {
 			for key, value := range values {
 				if !yield(key, value) {
@@ -46,6 +48,7 @@ func (p Pairs[K, V]) Filter(f func(K, V) bool) Pairs[K, V] {
 	}
 
 	return Pairs[K, V]{
+		size: p.size.asUpperBound(),
 		seq: func(yield func(K, V) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				if !f(key, value) {
@@ -64,6 +67,7 @@ func (p Pairs[K, V]) FilterKeys(f func(K) bool) Pairs[K, V] {
 	}
 
 	return Pairs[K, V]{
+		size: p.size.asUpperBound(),
 		seq: func(yield func(K, V) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				if !f(key) {
@@ -82,6 +86,7 @@ func (p Pairs[K, V]) FilterValues(f func(V) bool) Pairs[K, V] {
 	}
 
 	return Pairs[K, V]{
+		size: p.size.asUpperBound(),
 		seq: func(yield func(K, V) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				if !f(value) {
@@ -100,6 +105,7 @@ func (p Pairs[K, V]) Map[U any](f func(K, V) U) Chain[U] {
 	}
 
 	return Chain[U]{
+		size: p.size,
 		seq: func(yield func(U) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				return yield(f(key, value))
@@ -115,6 +121,7 @@ func (p Pairs[K, V]) MapKeys[K2 comparable](f func(K) K2) Pairs[K2, V] {
 	}
 
 	return Pairs[K2, V]{
+		size: p.size,
 		seq: func(yield func(K2, V) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				return yield(f(key), value)
@@ -130,6 +137,7 @@ func (p Pairs[K, V]) MapValues[U any](f func(V) U) Pairs[K, U] {
 	}
 
 	return Pairs[K, U]{
+		size: p.size,
 		seq: func(yield func(K, U) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				return yield(key, f(value))
@@ -141,6 +149,7 @@ func (p Pairs[K, V]) MapValues[U any](f func(V) U) Pairs[K, U] {
 // Keys deferred 地把 pair sequence 转为 key sequence。
 func (p Pairs[K, V]) Keys() Chain[K] {
 	return Chain[K]{
+		size: p.size,
 		seq: func(yield func(K) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				return yield(key)
@@ -152,6 +161,7 @@ func (p Pairs[K, V]) Keys() Chain[K] {
 // Values deferred 地把 pair sequence 转为 value sequence。
 func (p Pairs[K, V]) Values() Chain[V] {
 	return Chain[V]{
+		size: p.size,
 		seq: func(yield func(V) bool) {
 			p.Seq2()(func(key K, value V) bool {
 				return yield(value)
@@ -165,6 +175,7 @@ func (p Pairs[K, V]) Values() Chain[V] {
 // Reverse 会先收集全部 pair，再按相反顺序输出。
 func (p Pairs[K, V]) Reverse() Pairs[K, V] {
 	return Pairs[K, V]{
+		size: p.size,
 		seq: func(yield func(K, V) bool) {
 			pairs := p.ToPairs()
 			for i := len(pairs) - 1; i >= 0; i-- {
@@ -181,7 +192,7 @@ func (p Pairs[K, V]) Reverse() Pairs[K, V] {
 //
 // 如果同一个 key 出现多次，最后一个 value 生效。
 func (p Pairs[K, V]) ToMap() map[K]V {
-	values := make(map[K]V)
+	values := make(map[K]V, p.size.exactCapacity())
 	p.Seq2()(func(key K, value V) bool {
 		values[key] = value
 		return true
@@ -191,7 +202,7 @@ func (p Pairs[K, V]) ToMap() map[K]V {
 
 // ToPairs 把 Pairs 消费为 Pair slice。
 func (p Pairs[K, V]) ToPairs() []Pair[K, V] {
-	values := make([]Pair[K, V], 0)
+	values := make([]Pair[K, V], 0, p.size.exactCapacity())
 	p.Seq2()(func(key K, value V) bool {
 		values = append(values, Pair[K, V]{
 			Key:   key,

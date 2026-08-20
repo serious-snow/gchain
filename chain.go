@@ -7,7 +7,8 @@ import "iter"
 //
 // Chain 在 ToSlice 或 Count 这类 terminal operation 运行前不会消费 source。
 type Chain[T any] struct {
-	seq iter.Seq[T]
+	seq  iter.Seq[T]
+	size sizeHint
 }
 
 // From 从 slice 创建 Chain，不复制元素。
@@ -15,6 +16,7 @@ type Chain[T any] struct {
 // From 会捕获调用时的 slice header；terminal operation 前的元素修改会在消费时可见。
 func From[Slice ~[]T, T any](values Slice) Chain[T] {
 	return Chain[T]{
+		size: exactSizeHint(len(values)),
 		seq: func(yield func(T) bool) {
 			for _, value := range values {
 				if !yield(value) {
@@ -45,6 +47,7 @@ func (c Chain[T]) Map[U any](f func(T) U) Chain[U] {
 	}
 
 	return Chain[U]{
+		size: c.size,
 		seq: func(yield func(U) bool) {
 			c.Seq()(func(value T) bool {
 				return yield(f(value))
@@ -60,6 +63,7 @@ func (c Chain[T]) MapIndexed[U any](f func(int, T) U) Chain[U] {
 	}
 
 	return Chain[U]{
+		size: c.size,
 		seq: func(yield func(U) bool) {
 			index := 0
 			c.Seq()(func(value T) bool {
@@ -78,6 +82,7 @@ func (c Chain[T]) Filter(f func(T) bool) Chain[T] {
 	}
 
 	return Chain[T]{
+		size: c.size.asUpperBound(),
 		seq: func(yield func(T) bool) {
 			c.Seq()(func(value T) bool {
 				if !f(value) {
@@ -96,6 +101,7 @@ func (c Chain[T]) FilterIndexed(f func(int, T) bool) Chain[T] {
 	}
 
 	return Chain[T]{
+		size: c.size.asUpperBound(),
 		seq: func(yield func(T) bool) {
 			index := 0
 			c.Seq()(func(value T) bool {
@@ -117,6 +123,7 @@ func (c Chain[T]) Take(n int) Chain[T] {
 	}
 
 	return Chain[T]{
+		size: c.size.take(n),
 		seq: func(yield func(T) bool) {
 			if n == 0 {
 				return
@@ -141,6 +148,7 @@ func (c Chain[T]) Drop(n int) Chain[T] {
 	}
 
 	return Chain[T]{
+		size: c.size.drop(n),
 		seq: func(yield func(T) bool) {
 			skipped := 0
 			c.Seq()(func(value T) bool {
@@ -183,6 +191,7 @@ func (c Chain[T]) DistinctBy[K comparable](key func(T) K) Chain[T] {
 	}
 
 	return Chain[T]{
+		size: c.size.asUpperBound(),
 		seq: func(yield func(T) bool) {
 			seen := make(map[K]struct{})
 			c.Seq()(func(value T) bool {
@@ -202,6 +211,7 @@ func (c Chain[T]) DistinctBy[K comparable](key func(T) K) Chain[T] {
 // Reverse 会先收集全部元素，再按相反顺序输出。
 func (c Chain[T]) Reverse() Chain[T] {
 	return Chain[T]{
+		size: c.size,
 		seq: func(yield func(T) bool) {
 			values := c.ToSlice()
 			for i := len(values) - 1; i >= 0; i-- {
@@ -216,6 +226,7 @@ func (c Chain[T]) Reverse() Chain[T] {
 // Enumerate deferred 地把每个元素和从 0 开始的索引组成 pair sequence。
 func (c Chain[T]) Enumerate() Pairs[int, T] {
 	return Pairs[int, T]{
+		size: c.size,
 		seq: func(yield func(int, T) bool) {
 			index := 0
 			c.Seq()(func(value T) bool {
@@ -237,6 +248,7 @@ func (c Chain[T]) GroupBy[K comparable](key func(T) K) Groups[K, T] {
 	}
 
 	return Groups[K, T]{
+		size: c.size.asUpperBound(),
 		seq: func(yield func(K, []T) bool) {
 			groups := make(map[K][]T)
 			c.Seq()(func(value T) bool {
@@ -256,7 +268,7 @@ func (c Chain[T]) GroupBy[K comparable](key func(T) K) Groups[K, T] {
 
 // ToSlice 消费 Chain，并返回包含全部元素的 slice。
 func (c Chain[T]) ToSlice() []T {
-	values := make([]T, 0)
+	values := make([]T, 0, c.size.exactCapacity())
 	c.Seq()(func(value T) bool {
 		values = append(values, value)
 		return true
@@ -272,7 +284,7 @@ func (c Chain[T]) ToMap[K comparable, V any](f func(T) (K, V)) map[K]V {
 		panic("gchain: nil ToMap function")
 	}
 
-	values := make(map[K]V)
+	values := make(map[K]V, c.size.exactCapacity())
 	c.Seq()(func(value T) bool {
 		key, mapped := f(value)
 		values[key] = mapped
@@ -289,7 +301,7 @@ func (c Chain[T]) ToMapBy[K comparable](f func(T) K) map[K]T {
 		panic("gchain: nil ToMapBy function")
 	}
 
-	values := make(map[K]T)
+	values := make(map[K]T, c.size.exactCapacity())
 	c.Seq()(func(value T) bool {
 		values[f(value)] = value
 		return true
