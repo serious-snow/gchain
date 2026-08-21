@@ -175,6 +175,10 @@ ports := gchain.FromMap(config).
 - Nil slice and nil map sources produce empty results.
 - Nil operation functions panic.
 
+## License
+
+MIT License. See [LICENSE](LICENSE).
+
 ## Not In The First Version
 
 - Error-aware chains
