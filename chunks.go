@@ -99,6 +99,46 @@ func (c Chunks[T]) Drop(n int) Chunks[T] {
 	}
 }
 
+// TakeWhile deferred 地保留前缀中连续匹配 f 的 chunk，并在首次不匹配时停止消费。
+func (c Chunks[T]) TakeWhile(f func([]T) bool) Chunks[T] {
+	if f == nil {
+		panic("gchain: nil TakeWhile function")
+	}
+
+	return Chunks[T]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func([]T) bool) {
+			c.Seq()(func(chunk []T) bool {
+				if !f(chunk) {
+					return false
+				}
+				return yield(chunk)
+			})
+		},
+	}
+}
+
+// DropWhile deferred 地跳过前缀中连续匹配 f 的 chunk。
+func (c Chunks[T]) DropWhile(f func([]T) bool) Chunks[T] {
+	if f == nil {
+		panic("gchain: nil DropWhile function")
+	}
+
+	return Chunks[T]{
+		size: c.size.asUpperBound(),
+		seq: func(yield func([]T) bool) {
+			dropping := true
+			c.Seq()(func(chunk []T) bool {
+				if dropping && f(chunk) {
+					return true
+				}
+				dropping = false
+				return yield(chunk)
+			})
+		},
+	}
+}
+
 // ToSlice 消费 Chunks，并返回包含全部 chunk 的 slice。
 func (c Chunks[T]) ToSlice() [][]T {
 	values := make([][]T, 0, c.size.exactCapacity())

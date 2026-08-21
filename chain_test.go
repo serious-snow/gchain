@@ -465,6 +465,34 @@ func TestChunkOperation(t *testing.T) {
 			t.Fatalf("Chunks.Map().ToSlice()=%v, want [7]", sums)
 		}
 
+		takeWhileCalls := 0
+		prefix := chunks.
+			TakeWhile(func(chunk []int) bool {
+				takeWhileCalls++
+				return chunk[0] < 3
+			}).
+			ToSlice()
+		if !reflect.DeepEqual(prefix, [][]int{{1, 2}}) {
+			t.Fatalf("Chunks.TakeWhile().ToSlice()=%v, want [[1 2]]", prefix)
+		}
+		if takeWhileCalls != 2 {
+			t.Fatalf("Chunks.TakeWhile calls=%d, want 2", takeWhileCalls)
+		}
+
+		dropWhileCalls := 0
+		remaining := chunks.
+			DropWhile(func(chunk []int) bool {
+				dropWhileCalls++
+				return chunk[0] < 3
+			}).
+			ToSlice()
+		if !reflect.DeepEqual(remaining, [][]int{{3, 4}}) {
+			t.Fatalf("Chunks.DropWhile().ToSlice()=%v, want [[3 4]]", remaining)
+		}
+		if dropWhileCalls != 2 {
+			t.Fatalf("Chunks.DropWhile calls=%d, want 2", dropWhileCalls)
+		}
+
 		seen := make([][]int, 0)
 		chunks.Take(1).ForEach(func(chunk []int) {
 			seen = append(seen, chunk)
@@ -814,6 +842,8 @@ func TestNilFunctionsPanic(t *testing.T) {
 	mustPanic(t, func() { _ = chunks.Map[int](nil) })
 	mustPanic(t, func() { _ = chunks.Take(-1) })
 	mustPanic(t, func() { _ = chunks.Drop(-1) })
+	mustPanic(t, func() { _ = chunks.TakeWhile(nil) })
+	mustPanic(t, func() { _ = chunks.DropWhile(nil) })
 	mustPanic(t, func() { chunks.ForEach(nil) })
 
 	pairs := gchain.FromMap(map[string]int{})

@@ -109,6 +109,8 @@ ports := gchain.FromMap(config).
 | `Map(func([]T) U)` | `Chain[U]` | 把 chunk 映射为单值。 | deferred, streaming over chunks |
 | `Take(n)` | `Chunks[T]` | 最多保留前 `n` 个 chunk，支持早停。 | deferred, streaming over chunks |
 | `Drop(n)` | `Chunks[T]` | 跳过前 `n` 个 chunk。 | deferred, streaming over chunks |
+| `TakeWhile(func([]T) bool)` | `Chunks[T]` | 保留连续匹配的前缀 chunk，支持早停。 | deferred, streaming over chunks |
+| `DropWhile(func([]T) bool)` | `Chunks[T]` | 跳过连续匹配的前缀 chunk。 | deferred, streaming over chunks |
 | `ToSlice()` | `[][]T` | 收集为 chunk slice。 | terminal |
 | `Count()` | `int` | 统计 chunk 数量。 | terminal |
 | `First()` | `([]T, bool)` | 返回第一个 chunk，空 sequence 返回 `false`。 | terminal, early-stop |
